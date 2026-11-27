@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ridgeline Courier</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1620; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #shot-info { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+  .hidden { display: none !important; }
+
+  /* --- HUD: lit glass instruments over the view --- */
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #e8f2f8; text-shadow: 0 1px 3px rgba(0,0,0,0.7); z-index: 5; }
+  .inst { background: rgba(10, 22, 30, 0.62); border: 1px solid rgba(159, 195, 212, 0.35); border-radius: 8px; padding: 6px 12px; backdrop-filter: blur(2px); }
+  .inst .label { font-size: 10px; letter-spacing: 2px; color: #9fc3d4; }
+  .inst .value { font-size: 30px; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .inst .value small { font-size: 13px; font-weight: 400; color: #9fc3d4; }
+  #hud-left { position: absolute; top: 14px; left: 14px; display: flex; gap: 10px; }
+  #hud-left .inst { min-width: 92px; }
+  #hud-left .inst .value.negative { color: #ffb02e; }
+  #hud.stall #hud-speed { color: #ff5a4e; }
+
+  #hud-compass { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #hud-tape-wrap { position: relative; width: 360px; height: 30px; overflow: hidden; background: rgba(10, 22, 30, 0.62); border: 1px solid rgba(159, 195, 212, 0.35); border-radius: 8px; }
+  #hud-tape { position: absolute; top: 0; left: 0; height: 100%; width: 2880px; }
+  .tape-tick { position: absolute; top: 0; width: 20px; margin-left: -10px; text-align: center; font-size: 11px; color: #9fc3d4; padding-top: 3px; }
+  .tape-tick::after { content: ""; display: block; width: 1px; height: 7px; margin: 2px auto 0; background: #9fc3d4; }
+  .tape-lubber { position: absolute; left: 50%; top: 0; width: 2px; height: 100%; background: #ffb02e; transform: translateX(-50%); }
+  #hud-heading { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  #hud-right { position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  #hud-right .inst { min-width: 180px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; }
+  .bar-row .label { font-size: 10px; letter-spacing: 2px; color: #9fc3d4; width: 34px; }
+  .bar { flex: 1; height: 10px; background: rgba(255,255,255,0.14); border-radius: 5px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 5px; background: #4fc3f7; transition: width 0.12s linear; }
+  #hud-fuel-fill { background: #7fae56; }
+  #hud-fuel-fill.low { background: #ff5a4e; }
+  #hud-fuel-value { font-size: 12px; width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+  #hud-fuel-value.low { color: #ff5a4e; }
+  #hud-score-row { display: flex; gap: 16px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #hud-score-row .label { font-size: 10px; letter-spacing: 2px; color: #9fc3d4; display: block; }
+
+  #hud-attitude-wrap { position: absolute; left: 14px; bottom: 14px; text-align: center; }
+  #hud-attitude { background: rgba(10, 22, 30, 0.62); border: 1px solid rgba(159, 195, 212, 0.35); border-radius: 50%; }
+  #hud-attitude-wrap .label { font-size: 10px; letter-spacing: 2px; color: #9fc3d4; margin-top: 4px; }
+
+  #hud-bottom { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); text-align: center; }
+  #hud-objective { font-size: 17px; font-weight: 600; background: rgba(10, 22, 30, 0.62); border: 1px solid rgba(159, 195, 212, 0.35); border-radius: 8px; padding: 6px 16px; display: inline-block; }
+  #hud-rings { font-size: 13px; color: #9fc3d4; margin-top: 6px; }
+  #hud-hull { font-size: 13px; color: #9fc3d4; margin-top: 2px; letter-spacing: 1px; }
+  #hud-hull.bad { color: #ff5a4e; }
+
+  #hud-message { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font-size: 24px; font-weight: 700; color: #ffd97a; opacity: 0; transition: opacity 0.25s; text-shadow: 0 2px 8px rgba(0,0,0,0.8); text-align: center; }
+  #hud-message.visible { opacity: 1; }
+
+  /* --- Overlay panels: title, paused, game over --- */
+  #panel { position: absolute; left: 50%; bottom: 5%; transform: translateX(-50%); width: min(720px, 92vw); background: rgba(10, 22, 30, 0.82); border: 1px solid rgba(159, 195, 212, 0.4); border-radius: 14px; padding: 20px 26px 22px; color: #e8f2f8; z-index: 10; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  #panel h1 { margin: 0 0 6px; font-size: 40px; letter-spacing: 1px; color: #ffd97a; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+  #panel .tag { margin: 0 0 14px; color: #9fc3d4; font-size: 15px; }
+  #panel .missions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  #panel button.mission { display: block; width: 100%; text-align: left; background: rgba(79, 195, 247, 0.10); border: 1px solid rgba(159, 195, 212, 0.4); border-radius: 10px; color: #e8f2f8; padding: 10px 14px; cursor: pointer; font-family: inherit; }
+  #panel button.mission:hover, #panel button.mission.selected { background: rgba(255, 176, 46, 0.18); border-color: #ffb02e; }
+  #panel button.mission .mission-name { display: block; font-size: 17px; font-weight: 700; }
+  #panel button.mission .mission-blurb { display: block; font-size: 13px; color: #9fc3d4; margin-top: 2px; }
+  #panel button.mission .mission-meta { display: block; font-size: 12px; color: #9fc3d4; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  #panel .controls { font-size: 12.5px; color: #9fc3d4; margin: 0 0 8px; }
+  #panel .hint { font-size: 14px; color: #ffd97a; margin: 0; }
+  #panel .score-line { font-size: 16px; margin: 6px 0; }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Ridgeline Courier: fly the bush plane through the rings and land on the runway"></canvas>
+<p id="status" role="status" aria-live="polite"></p>
+<p id="shot-info" aria-hidden="true"></p>
+
+<div id="hud" class="hidden">
+  <div id="hud-left">
+    <div class="inst"><div class="label">AIRSPEED</div><div class="value"><span id="hud-speed">0</span> <small>kt</small></div></div>
+    <div class="inst"><div class="label">ALTITUDE</div><div class="value"><span id="hud-alt">0</span> <small>ft</small></div></div>
+    <div class="inst"><div class="label">VERT SPEED</div><div class="value"><span id="hud-vsi">+0</span> <small>ft/m</small></div></div>
+  </div>
+  <div id="hud-compass">
+    <div id="hud-tape-wrap"><div id="hud-tape"></div><div class="tape-lubber"></div></div>
+    <div id="hud-heading">000°</div>
+  </div>
+  <div id="hud-right">
+    <div class="inst">
+      <div class="bar-row"><span class="label">THR</span><div class="bar"><div id="hud-throttle-fill" style="width:0%"></div></div></div>
+      <div class="bar-row" style="margin-top:6px"><span class="label">FUEL</span><div class="bar"><div id="hud-fuel-fill" style="width:100%"></div></div><span id="hud-fuel-value">100%</span></div>
+      <div id="hud-score-row" style="margin-top:8px">
+        <span><span class="label">SCORE</span><span id="hud-score">0</span></span>
+        <span><span class="label">TIME</span><span id="hud-time">5:00</span></span>
+      </div>
+    </div>
+  </div>
+  <div id="hud-attitude-wrap">
+    <canvas id="hud-attitude" width="140" height="140"></canvas>
+    <div class="label">ATTITUDE</div>
+  </div>
+  <div id="hud-bottom">
+    <div id="hud-objective">Fly through ring 1 of 8.</div>
+    <div id="hud-rings">◯ 8 rings left</div>
+    <div id="hud-hull">HULL ▮▮▮</div>
+  </div>
+  <div id="hud-message"></div>
+</div>
+
+<div id="panel" class="hidden"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
